@@ -15,14 +15,13 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
     const textContent = await page.getTextContent();
     const items = textContent.items as TextItem[];
 
-    // Grupeerime read tolerantsiga (et püüda kinni veidi nihkes tekstid)
+    // Grupeerime read tolerantsiga (5px)
     const rows: { y: number; items: { text: string; x: number }[] }[] = [];
     const Y_TOLERANCE = 5;
 
     items.forEach((item) => {
       const y = item.transform[5];
       let row = rows.find(r => Math.abs(r.y - y) < Y_TOLERANCE);
-      
       if (!row) {
         row = { y, items: [] };
         rows.push(row);
@@ -33,6 +32,7 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
     const sortedRows = rows.sort((a, b) => b.y - a.y);
 
     sortedRows.forEach((row) => {
+      // Sorteerime vasakult paremale
       const rowItems = row.items.sort((a, b) => a.x - b.x);
       const fullRowText = rowItems.map(item => item.text).join(' ');
       
@@ -57,7 +57,7 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
 function parseRowText(text: string): RowData | null {
   const cleanText = text.replace(/\s+/g, ' ').trim();
 
-  // Filtreerime välja päised
+  // Filtreerime välja päised ja tühjad read
   if (cleanText.includes("Klient") && cleanText.includes("Mõõt")) return null;
   if (cleanText.length < 10) return null;
   if (cleanText.toLowerCase().includes("page")) return null;
@@ -66,50 +66,59 @@ function parseRowText(text: string): RowData | null {
   const mootMatch = cleanText.match(/\b\d{3}\/\d{2,3}(\/\d{2,3})?\b/);
   const moot = mootMatch ? mootMatch[0] : "";
 
+  // Kui mõõtu pole, kontrollime, kas on ehk utiili kommentaariga rida
   if (!moot && !cleanText.toLowerCase().includes("utiil")) return null;
 
-  // 2. LINT
-  const lintMatch = cleanText.match(/\b(nrd|wts|wmp|kdy|mix|kzy|ipd|za|bus100|bus400|r100|r400|bdr|bdl)\b/i);
-  const lint = lintMatch ? lintMatch[0].toUpperCase() : "-";
-
-  // 3. LAIUS
-  // Otsime kõiki potentsiaalseid laiuse numbreid (100-499)
+  // 2. LAIUS (Leiame selle enne linti, sest lint sõltub laiusest)
   const numbers = cleanText.match(/\b([1-4]\d{2})\b/g);
   let laius = "-";
-  
-  // Strateegia:
-  // A. Kui me leiame lindi koodi, siis otsime numbrit OTSE selle järelt. 
-  //    Seda numbrit usaldame 100%, isegi kui see kattub rehvi mõõduga (nt 225).
-  // B. Kui lindi koodi pole või selle taga numbrit pole, siis otsime numbrit mujalt,
-  //    aga siis oleme ettevaatlikud ja välistame rehvi mõõdus olevad numbrid.
+  let widthIndexInString = -1; // Jätame meelde koha, kus laius asub
 
-  if (lint !== "-" && cleanText.toUpperCase().includes(lint)) {
-      const afterLint = cleanText.toUpperCase().split(lint)[1];
-      // Otsime esimest 3-kohalist numbrit lindi järel
-      const widthMatch = afterLint.match(/\b([1-4]\d{2})\b/);
-      
-      if (widthMatch) {
-          const wVal = parseInt(widthMatch[0]);
-          if (wVal >= 101 && wVal <= 499) {
-              // SIIN ON MUUDATUS: Me ei kontrolli enam moot.includes(), 
-              // sest kui number on lindi järel, on see kindlasti laius.
-              laius = widthMatch[0];
-          }
-      }
-  } 
-  
-  // Kui lindi kaudu ei leidnud, proovime leida "vaba" numbrit (Fallback)
-  if (laius === "-" && numbers) {
+  if (numbers) {
       const validWidths = numbers.filter(n => {
         const val = parseInt(n);
-        // Siin oleme endiselt ettevaatlikud: välistame numbri, kui see on mõõdu sees
-        if (moot.includes(n)) return false;
+        if (moot.includes(n)) return false; // Ei tohi olla mõõdu sees
         return val >= 101 && val <= 499; 
       });
 
       if (validWidths.length > 0) {
-         laius = validWidths[0];
+         // Eelistame viimast sobivat numbrit, mis on tõenäoliselt laiuse veerg
+         laius = validWidths[validWidths.length - 1];
+         // Leiame selle numbri asukoha tekstis (et leida linti selle eest)
+         widthIndexInString = cleanText.lastIndexOf(laius);
       }
+  }
+
+  // 3. LINT (Dünaamiline tuvastus)
+  // Loogika: Lint on sõna, mis on VAHETULT laiuse ees.
+  let lint = "-";
+  
+  if (laius !== "-" && widthIndexInString > 0) {
+      // Võtame teksti kuni laiuse numbrini
+      const textBeforeWidth = cleanText.substring(0, widthIndexInString).trim();
+      // Võtame viimase sõna sellest tekstist
+      const words = textBeforeWidth.split(" ");
+      const candidate = words[words.length - 1];
+
+      // Kontrollime, et see kandidaat ei oleks "keelatud sõna"
+      const blackList = [
+          "originaal", "taastamine", "klient", "rm", 
+          "michelin", "bridgestone", "goodyear", "continental", "nokian", "dunlop", 
+          "yokohama", "hankook", "kumho", "barum", "sava", "fulda", "kelly", "kama", 
+          "roadx", "triangle", "sailun", "linglong", "aeolus", "leao", "cordiant", "westlake",
+          "hifly", "falken", "firestone", "windpower"
+      ];
+      
+      // Lint peab olema vähemalt 2 tähte pikk ja mitte mustas nimekirjas
+      if (candidate.length >= 2 && !blackList.includes(candidate.toLowerCase())) {
+          lint = candidate.toUpperCase();
+      }
+  }
+  
+  // Tagavara lint (kui dünaamiline ei töötanud, nt laius puudub)
+  if (lint === "-") {
+     const backupMatch = cleanText.match(/\b(nrd|wts|wmp|kdy|mix|kzy|ipd|za|bus100|bus400|da2|hm2|wrd|bza65)\b/i);
+     if (backupMatch) lint = backupMatch[0].toUpperCase();
   }
 
   // 4. KLIENT
@@ -119,10 +128,23 @@ function parseRowText(text: string): RowData | null {
   const paigadMatch = cleanText.match(/\b(Ct\d+|C\d+|up\d+)\b/gi);
   const paigad = paigadMatch ? paigadMatch.join(', ') : "-";
 
-  // 6. UTIIL / PRAAK
-  const utiilKeywords = /lõhki|vigastatud|munas|auk|praak|utiil|karestamist|traat|niidid|separatsioon/i;
-  const onKommentaar = utiilKeywords.test(cleanText);
+  // 6. UTIIL / PRAAK (Laiendatud loogika)
+  // Sinu reegel: "Kui veerus on midagi kirjutatud".
+  // Kuna meil pole veerge, otsime "halbu sõnu" ja välistame "peale ahju".
+  
+  const badWords = [
+      "katki", "lõhed", "lõhe", "vigastatud", "viga", "praak", "auk", "munas", "muhk", 
+      "traat", "niidid", "separatsioon", "karestamist", "utiil", "serv", "äär", "külg", 
+      "must", "kanna", "protektor", "siil", "rebend"
+  ];
+  
+  // Teeme regexi kõigist halbadest sõnadest
+  const utiilRegex = new RegExp(badWords.join("|"), "i");
+  
+  const onKommentaar = utiilRegex.test(cleanText);
   const onPealeAhju = /peale ahju/i.test(cleanText);
+
+  // Kui on kommentaar JA EI OLE "peale ahju", siis on praak
   const isScrap = onKommentaar && !onPealeAhju;
 
   return {
