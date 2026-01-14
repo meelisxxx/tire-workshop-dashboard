@@ -1,68 +1,61 @@
-import { Package, Wrench, FileText, Layers } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import type { WorksheetData } from '@/types/worksheet';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FileText, Box, Trash2 } from "lucide-react";
+import type { WorksheetData } from "@/types/worksheet";
 
 interface SummaryCardsProps {
   data: WorksheetData;
 }
 
 export function SummaryCards({ data }: SummaryCardsProps) {
-  const totalRows = data.rows.length;
-  const uniqueMaterials = data.materialGroups.length;
-  const totalPatches = data.patchGroups.reduce((sum, g) => sum + g.count, 0);
-  const uniquePatches = data.patchGroups.length;
-
-  const cards = [
-    {
-      title: 'Tööread kokku',
-      value: totalRows,
-      icon: FileText,
-      description: 'Analüüsitud ridade arv'
-    },
-    {
-      title: 'Materjalid',
-      value: uniqueMaterials,
-      icon: Package,
-      description: 'Unikaalsed kombinatsioonid'
-    },
-    {
-      title: 'Paigad kokku',
-      value: totalPatches,
-      icon: Wrench,
-      description: `${uniquePatches} erinevat tüüpi`
-    },
-    {
-      title: 'Keskmine/lint',
-      value: uniqueMaterials > 0 ? Math.round(totalRows / uniqueMaterials) : 0,
-      icon: Layers,
-      description: 'Tükki materjali kohta'
-    }
-  ];
+  // Arvutame utiili koguse ridade põhjal
+  const utiilCount = data.rows.filter(row => row.isScrap).length;
+  
+  // Arvutame tootmisridade arvu (read, mis POLE utiil)
+  const productionRows = data.rows.length - utiilCount;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {cards.map((card) => (
-        <Card key={card.title} className="bg-card">
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {card.title}
-                </p>
-                <p className="text-3xl font-semibold text-foreground mt-2">
-                  {card.value}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {card.description}
-                </p>
-              </div>
-              <div className="p-2 bg-primary/10 text-primary">
-                <card.icon className="w-5 h-5" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="grid gap-4 md:grid-cols-3">
+      {/* 1. Tööread kokku */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Tööread kokku</CardTitle>
+          <FileText className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{data.rows.length}</div>
+          <p className="text-xs text-muted-foreground">
+            Sellest tootmine: {productionRows}, Utiil: {utiilCount}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 2. Utiil kokku (UUS KAART) */}
+      <Card className={utiilCount > 0 ? "border-red-200 bg-red-50" : ""}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-red-700">Utiil kokku</CardTitle>
+          <Trash2 className="h-4 w-4 text-red-500" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-red-700">{utiilCount}</div>
+          <p className="text-xs text-red-600/80">
+            Rehvi läks praaki
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 3. Materjalid (Kombinatsioonid) */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Erinevad tooted</CardTitle>
+          <Box className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{data.materialGroups.length}</div>
+          <p className="text-xs text-muted-foreground">
+            Unikaalsed kombinatsioonid
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
