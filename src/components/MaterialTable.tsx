@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -6,8 +5,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import type { MaterialGroup } from '@/types/worksheet';
+} from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { MaterialGroup } from "@/types/worksheet";
 
 interface MaterialTableProps {
   groups: MaterialGroup[];
@@ -17,50 +17,56 @@ interface MaterialTableProps {
 }
 
 export function MaterialTable({ groups, mootFilter, lintFilter, laiusFilter }: MaterialTableProps) {
-  const filteredGroups = groups.filter(group => {
-    if (mootFilter && !group.moot.toLowerCase().includes(mootFilter.toLowerCase())) return false;
-    if (lintFilter && !group.lint.toLowerCase().includes(lintFilter.toLowerCase())) return false;
-    if (laiusFilter && !group.laius.toLowerCase().includes(laiusFilter.toLowerCase())) return false;
-    return true;
+  // Filtreerimine
+  const filteredGroups = groups.filter((group) => {
+    const matchesMoot = group.moot.toLowerCase().includes(mootFilter.toLowerCase());
+    const matchesLint = group.lint.toLowerCase().includes(lintFilter.toLowerCase());
+    const matchesLaius = group.laius.toLowerCase().includes(laiusFilter.toLowerCase());
+    return matchesMoot && matchesLint && matchesLaius;
   });
 
-  const totalCount = filteredGroups.reduce((sum, g) => sum + g.count, 0);
+  // Arvutame kogusumma
+  const totalPieces = filteredGroups.reduce((sum, group) => sum + (group.kogus || 0), 0);
 
   return (
-    <Card className="bg-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg font-semibold flex items-center justify-between">
-          <span>Materjali kulu</span>
-          <span className="text-sm font-normal text-muted-foreground">
-            Kokku: {totalCount} tk
-          </span>
-        </CardTitle>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Materjali kulu</CardTitle>
+        <div className="text-sm text-muted-foreground font-medium">
+          Kokku: {totalPieces} tk
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="font-semibold">Mõõt</TableHead>
-                <TableHead className="font-semibold">Lint</TableHead>
-                <TableHead className="font-semibold">Laius</TableHead>
-                <TableHead className="font-semibold text-right">Kogus</TableHead>
+                <TableHead>Mõõt</TableHead>
+                <TableHead>Lint</TableHead>
+                <TableHead>Laius</TableHead>
+                <TableHead className="text-right">Kogus</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredGroups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     Andmed puuduvad
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredGroups.map((group, index) => (
-                  <TableRow key={`${group.moot}-${group.lint}-${group.laius}-${index}`}>
-                    <TableCell className="font-mono">{group.moot}</TableCell>
-                    <TableCell>{group.lint}</TableCell>
+                filteredGroups.map((group) => (
+                  <TableRow key={group.id}>
+                    <TableCell className="font-medium">{group.moot}</TableCell>
+                    <TableCell>
+                      <span className="px-2 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                        {group.lint}
+                      </span>
+                    </TableCell>
                     <TableCell>{group.laius}</TableCell>
-                    <TableCell className="text-right font-semibold">{group.count} tk</TableCell>
+                    <TableCell className="text-right font-bold">
+                      {group.kogus} tk
+                    </TableCell>
                   </TableRow>
                 ))
               )}
