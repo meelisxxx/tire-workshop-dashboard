@@ -69,38 +69,32 @@ function parseRowText(text: string): RowData | null {
   // Kui mõõtu pole, kontrollime, kas on ehk utiili kommentaariga rida
   if (!moot && !cleanText.toLowerCase().includes("utiil")) return null;
 
-  // 2. LAIUS (Leiame selle enne linti, sest lint sõltub laiusest)
+  // 2. LAIUS (Leiame selle enne linti)
   const numbers = cleanText.match(/\b([1-4]\d{2})\b/g);
   let laius = "-";
-  let widthIndexInString = -1; // Jätame meelde koha, kus laius asub
+  let widthIndexInString = -1; 
 
   if (numbers) {
       const validWidths = numbers.filter(n => {
         const val = parseInt(n);
-        if (moot.includes(n)) return false; // Ei tohi olla mõõdu sees
+        if (moot.includes(n)) return false; 
         return val >= 101 && val <= 499; 
       });
 
       if (validWidths.length > 0) {
-         // Eelistame viimast sobivat numbrit, mis on tõenäoliselt laiuse veerg
          laius = validWidths[validWidths.length - 1];
-         // Leiame selle numbri asukoha tekstis (et leida linti selle eest)
          widthIndexInString = cleanText.lastIndexOf(laius);
       }
   }
 
   // 3. LINT (Dünaamiline tuvastus)
-  // Loogika: Lint on sõna, mis on VAHETULT laiuse ees.
   let lint = "-";
   
   if (laius !== "-" && widthIndexInString > 0) {
-      // Võtame teksti kuni laiuse numbrini
       const textBeforeWidth = cleanText.substring(0, widthIndexInString).trim();
-      // Võtame viimase sõna sellest tekstist
       const words = textBeforeWidth.split(" ");
       const candidate = words[words.length - 1];
 
-      // Kontrollime, et see kandidaat ei oleks "keelatud sõna"
       const blackList = [
           "originaal", "taastamine", "klient", "rm", 
           "michelin", "bridgestone", "goodyear", "continental", "nokian", "dunlop", 
@@ -109,13 +103,12 @@ function parseRowText(text: string): RowData | null {
           "hifly", "falken", "firestone", "windpower"
       ];
       
-      // Lint peab olema vähemalt 2 tähte pikk ja mitte mustas nimekirjas
       if (candidate.length >= 2 && !blackList.includes(candidate.toLowerCase())) {
           lint = candidate.toUpperCase();
       }
   }
   
-  // Tagavara lint (kui dünaamiline ei töötanud, nt laius puudub)
+  // Tagavara lint
   if (lint === "-") {
      const backupMatch = cleanText.match(/\b(nrd|wts|wmp|kdy|mix|kzy|ipd|za|bus100|bus400|da2|hm2|wrd|bza65)\b/i);
      if (backupMatch) lint = backupMatch[0].toUpperCase();
@@ -128,23 +121,30 @@ function parseRowText(text: string): RowData | null {
   const paigadMatch = cleanText.match(/\b(Ct\d+|C\d+|up\d+)\b/gi);
   const paigad = paigadMatch ? paigadMatch.join(', ') : "-";
 
-  // 6. UTIIL / PRAAK (Laiendatud loogika)
-  // Sinu reegel: "Kui veerus on midagi kirjutatud".
-  // Kuna meil pole veerge, otsime "halbu sõnu" ja välistame "peale ahju".
+  // 6. UTIIL / PRAAK (TARGEM LOOGIKA)
   
+  // Nimekiri sõnadest, mis viitavad veale.
+  // Kuna otsime nüüd ainult õigest kohast, võime olla julgemad ja lisada tagasi 'serv', 'äär' jne.
   const badWords = [
       "katki", "lõhed", "lõhe", "vigastatud", "viga", "praak", "auk", "munas", "muhk", 
       "traat", "niidid", "separatsioon", "karestamist", "utiil", "serv", "äär", "külg", 
       "must", "kanna", "protektor", "siil", "rebend"
   ];
   
-  // Teeme regexi kõigist halbadest sõnadest
   const utiilRegex = new RegExp(badWords.join("|"), "i");
   
-  const onKommentaar = utiilRegex.test(cleanText);
+  // MUUDATUS: Otsime vigu AINULT tekstist, mis on PÄRAST mõõtu.
+  // See kaitseb kliendi nime (mis on enne mõõtu) valepositiivsete eest.
+  let textToCheckForScrap = cleanText;
+  
+  if (mootMatch && mootMatch.index !== undefined) {
+      // Lõikame teksti pooleks: kõik alates mõõdust ja paremale
+      textToCheckForScrap = cleanText.substring(mootMatch.index + mootMatch[0].length);
+  }
+  
+  const onKommentaar = utiilRegex.test(textToCheckForScrap);
   const onPealeAhju = /peale ahju/i.test(cleanText);
 
-  // Kui on kommentaar JA EI OLE "peale ahju", siis on praak
   const isScrap = onKommentaar && !onPealeAhju;
 
   return {
