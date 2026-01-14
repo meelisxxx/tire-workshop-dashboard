@@ -1,26 +1,28 @@
-export interface WorksheetRow {
-  id: string;
+export interface RowData {
+  id: number;
   klient: string;
   moot: string;
   lint: string;
   laius: string;
   paigad: string;
+  isScrap: boolean; // See on uus vajalik rida!
 }
 
 export interface MaterialGroup {
+  id: string;
   moot: string;
   lint: string;
   laius: string;
-  count: number;
+  kogus: number;
 }
 
 export interface PatchGroup {
-  code: string;
-  count: number;
+  kood: string;
+  kogus: number;
 }
 
 export interface WorksheetData {
-  rows: WorksheetRow[];
+  rows: RowData[];
   materialGroups: MaterialGroup[];
   patchGroups: PatchGroup[];
 }
