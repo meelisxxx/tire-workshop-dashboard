@@ -15,29 +15,24 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
     const textContent = await page.getTextContent();
     const items = textContent.items as TextItem[];
 
-    // UUS LOOGIKA: Grupeerime read "tolerantsiga"
-    // See aitab püüda kinni teksti, mis on natuke nihkes (nagu kommentaarid)
+    // Grupeerime read tolerantsiga (et püüda kinni veidi nihkes tekstid)
     const rows: { y: number; items: { text: string; x: number }[] }[] = [];
-    const Y_TOLERANCE = 5; // Lubame 5 ühikut kõikumist üles-alla
+    const Y_TOLERANCE = 5;
 
     items.forEach((item) => {
       const y = item.transform[5];
-      // Otsime olemasolevat rida, mis on samal kõrgusel (või väga lähedal)
       let row = rows.find(r => Math.abs(r.y - y) < Y_TOLERANCE);
       
       if (!row) {
-        // Kui ei leia, teeme uue rea
         row = { y, items: [] };
         rows.push(row);
       }
       row.items.push({ text: item.str, x: item.transform[4] });
     });
 
-    // Sorteerime read ülalt alla
     const sortedRows = rows.sort((a, b) => b.y - a.y);
 
     sortedRows.forEach((row) => {
-      // Sorteerime rea siseselt vasakult paremale
       const rowItems = row.items.sort((a, b) => a.x - b.x);
       const fullRowText = rowItems.map(item => item.text).join(' ');
       
@@ -78,39 +73,42 @@ function parseRowText(text: string): RowData | null {
   const lint = lintMatch ? lintMatch[0].toUpperCase() : "-";
 
   // 3. LAIUS
+  // Otsime kõiki potentsiaalseid laiuse numbreid (100-499)
   const numbers = cleanText.match(/\b([1-4]\d{2})\b/g);
   let laius = "-";
   
-  if (numbers) {
+  // Strateegia:
+  // A. Kui me leiame lindi koodi, siis otsime numbrit OTSE selle järelt. 
+  //    Seda numbrit usaldame 100%, isegi kui see kattub rehvi mõõduga (nt 225).
+  // B. Kui lindi koodi pole või selle taga numbrit pole, siis otsime numbrit mujalt,
+  //    aga siis oleme ettevaatlikud ja välistame rehvi mõõdus olevad numbrid.
+
+  if (lint !== "-" && cleanText.toUpperCase().includes(lint)) {
+      const afterLint = cleanText.toUpperCase().split(lint)[1];
+      // Otsime esimest 3-kohalist numbrit lindi järel
+      const widthMatch = afterLint.match(/\b([1-4]\d{2})\b/);
+      
+      if (widthMatch) {
+          const wVal = parseInt(widthMatch[0]);
+          if (wVal >= 101 && wVal <= 499) {
+              // SIIN ON MUUDATUS: Me ei kontrolli enam moot.includes(), 
+              // sest kui number on lindi järel, on see kindlasti laius.
+              laius = widthMatch[0];
+          }
+      }
+  } 
+  
+  // Kui lindi kaudu ei leidnud, proovime leida "vaba" numbrit (Fallback)
+  if (laius === "-" && numbers) {
       const validWidths = numbers.filter(n => {
         const val = parseInt(n);
-        
-        // KRIIILINE PARANDUS: Välistame numbri, kui see sisaldub Mõõt stringis!
-        // See takistab 225 valimist stringist 385/65/225
+        // Siin oleme endiselt ettevaatlikud: välistame numbri, kui see on mõõdu sees
         if (moot.includes(n)) return false;
-
         return val >= 101 && val <= 499; 
       });
 
       if (validWidths.length > 0) {
-        // Eelistame laiust, mis on lindi järel
-        if (lint !== "-" && cleanText.toUpperCase().includes(lint)) {
-            const afterLint = cleanText.toUpperCase().split(lint)[1];
-            const widthMatch = afterLint.match(/\b([1-4]\d{2})\b/);
-            if (widthMatch) {
-                const wVal = parseInt(widthMatch[0]);
-                 // Topeltkontroll, et see poleks mõõdu osa
-                if (wVal >= 101 && wVal <= 499 && !moot.includes(widthMatch[0])) {
-                    laius = widthMatch[0];
-                }
-            }
-        } 
-        
-        // Kui ikka pole, võtame esimese sobiva
-        if (laius === "-") {
-             const bestGuess = validWidths[0]; 
-             if (bestGuess) laius = bestGuess;
-        }
+         laius = validWidths[0];
       }
   }
 
@@ -122,7 +120,6 @@ function parseRowText(text: string): RowData | null {
   const paigad = paigadMatch ? paigadMatch.join(', ') : "-";
 
   // 6. UTIIL / PRAAK
-  // Lisasin siia veel märksõnu igaks juhuks
   const utiilKeywords = /lõhki|vigastatud|munas|auk|praak|utiil|karestamist|traat|niidid|separatsioon/i;
   const onKommentaar = utiilKeywords.test(cleanText);
   const onPealeAhju = /peale ahju/i.test(cleanText);
@@ -146,9 +143,6 @@ function calculateMaterialGroups(rows: RowData[]): MaterialGroup[] {
     if (row.isScrap) return;
     if (row.lint === "-" || row.lint === "") return;
 
-    // Lisakontroll: kui laius on ikka "-", siis ära pane gruppi (või pane eraldi)
-    // Hetkel jätame sisse, aga "-" laiusega.
-    
     const key = `${row.moot}-${row.lint}-${row.laius}`;
 
     if (!groups.has(key)) {
