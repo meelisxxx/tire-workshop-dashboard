@@ -15,7 +15,6 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
     const textContent = await page.getTextContent();
     const items = textContent.items as TextItem[];
 
-    // Grupeerime read tolerantsiga (5px)
     const rows: { y: number; items: { text: string; x: number }[] }[] = [];
     const Y_TOLERANCE = 5;
 
@@ -32,7 +31,6 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
     const sortedRows = rows.sort((a, b) => b.y - a.y);
 
     sortedRows.forEach((row) => {
-      // Sorteerime vasakult paremale
       const rowItems = row.items.sort((a, b) => a.x - b.x);
       const fullRowText = rowItems.map(item => item.text).join(' ');
       
@@ -57,7 +55,6 @@ export const parsePDF = async (file: File): Promise<WorksheetData> => {
 function parseRowText(text: string): RowData | null {
   const cleanText = text.replace(/\s+/g, ' ').trim();
 
-  // Filtreerime välja päised ja tühjad read
   if (cleanText.includes("Klient") && cleanText.includes("Mõõt")) return null;
   if (cleanText.length < 10) return null;
   if (cleanText.toLowerCase().includes("page")) return null;
@@ -66,10 +63,9 @@ function parseRowText(text: string): RowData | null {
   const mootMatch = cleanText.match(/\b\d{3}\/\d{2,3}(\/\d{2,3})?\b/);
   const moot = mootMatch ? mootMatch[0] : "";
 
-  // Kui mõõtu pole, kontrollime, kas on ehk utiili kommentaariga rida
   if (!moot && !cleanText.toLowerCase().includes("utiil")) return null;
 
-  // 2. LAIUS (Leiame selle enne linti)
+  // 2. LAIUS
   const numbers = cleanText.match(/\b([1-4]\d{2})\b/g);
   let laius = "-";
   let widthIndexInString = -1; 
@@ -87,7 +83,7 @@ function parseRowText(text: string): RowData | null {
       }
   }
 
-  // 3. LINT (Dünaamiline tuvastus)
+  // 3. LINT
   let lint = "-";
   
   if (laius !== "-" && widthIndexInString > 0) {
@@ -108,7 +104,6 @@ function parseRowText(text: string): RowData | null {
       }
   }
   
-  // Tagavara lint
   if (lint === "-") {
      const backupMatch = cleanText.match(/\b(nrd|wts|wmp|kdy|mix|kzy|ipd|za|bus100|bus400|da2|hm2|wrd|bza65)\b/i);
      if (backupMatch) lint = backupMatch[0].toUpperCase();
@@ -121,24 +116,20 @@ function parseRowText(text: string): RowData | null {
   const paigadMatch = cleanText.match(/\b(Ct\d+|C\d+|up\d+)\b/gi);
   const paigad = paigadMatch ? paigadMatch.join(', ') : "-";
 
-  // 6. UTIIL / PRAAK (TARGEM LOOGIKA)
-  
-  // Nimekiri sõnadest, mis viitavad veale.
-  // Kuna otsime nüüd ainult õigest kohast, võime olla julgemad ja lisada tagasi 'serv', 'äär' jne.
+  // 6. UTIIL / PRAAK (PARANDATUD - Eemaldatud ohtlikud sõnad)
+  // Eemaldasime: serv (Service), äär, külg, must, kanna
+  // Jätsime alles ainult konkreetsed vead.
   const badWords = [
       "katki", "lõhed", "lõhe", "vigastatud", "viga", "praak", "auk", "munas", "muhk", 
-      "traat", "niidid", "separatsioon", "karestamist", "utiil", "serv", "äär", "külg", 
-      "must", "kanna", "protektor", "siil", "rebend"
+      "traat", "niidid", "separatsioon", "karestamist", "utiil", "rebend", "siil"
   ];
   
   const utiilRegex = new RegExp(badWords.join("|"), "i");
   
-  // MUUDATUS: Otsime vigu AINULT tekstist, mis on PÄRAST mõõtu.
-  // See kaitseb kliendi nime (mis on enne mõõtu) valepositiivsete eest.
   let textToCheckForScrap = cleanText;
   
+  // Kontrollime ainult teksti PÄRAST mõõtu
   if (mootMatch && mootMatch.index !== undefined) {
-      // Lõikame teksti pooleks: kõik alates mõõdust ja paremale
       textToCheckForScrap = cleanText.substring(mootMatch.index + mootMatch[0].length);
   }
   
